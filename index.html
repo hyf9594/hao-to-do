@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Yuefeng's To-Do</title>
+  <title>Hao's To-Do</title>
   <style>
     body {
       max-width: 900px;
@@ -26,7 +26,6 @@
 
     .input-row {
       display: flex;
-      flex-wrap: wrap;
       gap: 10px;
       margin-bottom: 24px;
     }
@@ -40,6 +39,11 @@
     button {
       padding: 10px 16px;
       cursor: pointer;
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: default;
     }
 
     ul {
@@ -65,31 +69,107 @@
       color: #999;
     }
 
+    li.completed .due {
+      text-decoration: none;
+    }
+
+    #dueInput {
+      flex: 0 0 140px;
+      min-width: 0;
+      padding: 10px 12px;
+      font-size: 16px;
+    }
+
+    #dueError {
+      color: #d92c2c;
+    }
+
+    li .due {
+      flex: none;
+      font-size: 14px;
+      color: #888;
+    }
+
+    li .due.overdue {
+      color: #d92c2c;
+    }
   </style>
 </head>
 <body>
   <div class="app">
-    <h1>Yuefeng's To-Do</h1>
+    <h1>Hao's To-Do</h1>
 
     <div class="input-row">
       <input id="todoInput" type="text" placeholder="Enter a to-do item">
+      <input id="dueInput" type="text" placeholder="YYYY-MM-DD" aria-label="Deadline (YYYY-MM-DD)" aria-describedby="dueError" spellcheck="false">
       <button id="addButton">Add</button>
+      <button id="sortButton">Sort</button>
+      <button id="completeAllButton">Complete All</button>
+      <button id="clearCompletedButton">Clear Completed</button>
+      <button id="exportButton">Export</button>
     </div>
 
+    <p id="dueError" role="alert" hidden></p>
     <ul id="todoList"></ul>
+    <p id="stats"></p>
   </div>
 
   <script>
     const todoInput = document.getElementById("todoInput");
     const addButton = document.getElementById("addButton");
     const todoList = document.getElementById("todoList");
+    const sortButton = document.getElementById("sortButton");
+    const stats = document.getElementById("stats");
+
+    const dueInput = document.getElementById("dueInput");
+    const dueError = document.getElementById("dueError");
+    const completeAllButton = document.getElementById("completeAllButton");
+    const clearCompletedButton = document.getElementById("clearCompletedButton");
+    const exportButton = document.getElementById("exportButton");
 
     const todos = [
-      { text: "Attend class", completed: false },
-      { text: "Eat breakfast", completed: true }
+      { text: "Attend IE 591 class", completed: false },
+      { text: "Review IE 591 notes", completed: true }
     ];
 
+    function isOverdue(todo) {
+      if (!todo.due || todo.completed) {
+        return false;
+      }
+
+      const today = new Date().toISOString().slice(0, 10);
+      return todo.due < today;
+    }
+
+    function clearCompleted() {
+      const remaining = todos.filter(todo => !todo.completed);
+
+      todos.length = 0;
+      todos.push(...remaining);
+
+      renderTodos();
+    }
+
+    function exportTodos() {
+      const lines = todos.map(todo => todo.text);
+
+      const blob = new Blob([lines.join("\n")], { type: "text/plain" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = "hao-todos.txt";
+      link.click();
+    }
+
+    function completeAll() {
+      todos.forEach(todo => {
+        todo.completed = true;
+      });
+
+      renderTodos();
+    }
+
     function renderTodos() {
+      completeAllButton.disabled = todos.every(todo => todo.completed);
       todoList.innerHTML = "";
 
       todos.forEach((todo, index) => {
@@ -111,6 +191,14 @@
         const text = document.createElement("span");
         text.textContent = todo.text;
 
+        const due = document.createElement("span");
+        due.className = "due";
+        due.textContent = todo.due ? todo.due : "";
+        if (isOverdue(todo)) {
+          due.classList.add("overdue");
+          due.textContent = todo.due + " Overdue";
+        }
+
         const deleteButton = document.createElement("button");
         deleteButton.textContent = "Delete";
 
@@ -121,11 +209,35 @@
 
         li.appendChild(checkbox);
         li.appendChild(text);
+        li.appendChild(due);
         li.appendChild(deleteButton);
 
         todoList.appendChild(li);
       });
 
+      const left = todos.filter(todo => !todo.completed).length;
+      stats.textContent = `Total: ${todos.length}; Remaining: ${left}`;
+    }
+
+    let sortAsc = true;
+
+    function sortByDue() {
+      todos.sort((a, b) => {
+        if (!a.due) {
+          return 1;
+        }
+
+        if (!b.due) {
+          return -1;
+        }
+
+        return (a.due < b.due) === sortAsc ? -1 : 1;
+      });
+
+      sortButton.textContent = sortAsc ? "Sort ↑" : "Sort ↓";
+      sortAsc = !sortAsc;
+
+      renderTodos();
     }
 
     function addTodo() {
@@ -135,16 +247,41 @@
         return;
       }
 
+      const due = dueInput.value.trim();
+      if (due) {
+        const parts = due.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        const date = new Date(`${due}T00:00:00`);
+        if (!parts || date.getFullYear() !== Number(parts[1]) ||
+          date.getMonth() + 1 !== Number(parts[2]) || date.getDate() !== Number(parts[3])) {
+          dueError.textContent = "Enter a valid date in YYYY-MM-DD format.";
+          dueError.hidden = false;
+          dueInput.setAttribute("aria-invalid", "true");
+          dueInput.focus();
+          return;
+        }
+      }
+
       todos.push({
         text,
-        completed: false
+        completed: false,
+        due
       });
 
+      dueInput.value = "";
       todoInput.value = "";
       renderTodos();
     }
 
     addButton.addEventListener("click", addTodo);
+    dueInput.addEventListener("input", () => {
+      dueError.hidden = true;
+      dueInput.removeAttribute("aria-invalid");
+    });
+    sortButton.addEventListener("click", sortByDue);
+
+    completeAllButton.addEventListener("click", completeAll);
+    clearCompletedButton.addEventListener("click", clearCompleted);
+    exportButton.addEventListener("click", exportTodos);
     todoInput.addEventListener("keydown", event => {
       if (event.key === "Enter") {
         addTodo();
